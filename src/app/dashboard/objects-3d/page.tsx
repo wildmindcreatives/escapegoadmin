@@ -124,7 +124,9 @@ export default function Objects3DPage() {
     try {
       const { success, error } = await deleteObject3D(id, modelUrl)
       if (success) {
-        // Recharger la liste
+        // Supprimer immédiatement de l'état local pour un retour visuel instantané
+        setObjects(prevObjects => prevObjects.filter(obj => obj.id !== id))
+        // Puis recharger la liste pour s'assurer de la cohérence avec la base de données
         await loadObjects()
       } else {
         alert(`Erreur lors de la suppression: ${error}`)
