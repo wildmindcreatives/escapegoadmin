@@ -23,34 +23,56 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ArrowLeft, Plus, Trash2, Tag, CheckCircle, XCircle, Copy } from "lucide-react"
+import { ArrowLeft, Plus, Trash2, Tag, CheckCircle, XCircle, Copy, Gamepad2, Pencil, Filter } from "lucide-react"
 import {
   getPromoCodes,
   generatePromoCodes,
   deleteUsedPromoCodes,
   getPromoCodeStats,
-  type PromoCode
+  type PromoCode,
+  type PromoCodeType
 } from "@/app/actions/promocode"
 import { toast } from "sonner"
 import { StatCard } from "@/components/StatCard"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 export default function PromoCodesPage() {
   const router = useRouter()
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>([])
+  const [filteredCodes, setFilteredCodes] = useState<PromoCode[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [typeFilter, setTypeFilter] = useState<PromoCodeType | "all">("all")
   const [stats, setStats] = useState({
     total: 0,
     used: 0,
     unused: 0,
-    usageRate: 0
+    usageRate: 0,
+    byType: {
+      play: { total: 0, used: 0, unused: 0 },
+      publish: { total: 0, used: 0, unused: 0 }
+    }
   })
 
   useEffect(() => {
     loadPromoCodes()
   }, [])
+
+  useEffect(() => {
+    if (typeFilter === "all") {
+      setFilteredCodes(promoCodes)
+    } else {
+      setFilteredCodes(promoCodes.filter(code => code.type === typeFilter))
+    }
+  }, [promoCodes, typeFilter])
 
   async function loadPromoCodes() {
     try {
@@ -69,13 +91,14 @@ export default function PromoCodesPage() {
     }
   }
 
-  async function handleGenerateCodes() {
+  async function handleGenerateCodes(type: PromoCodeType) {
     try {
       setGenerating(true)
-      const result = await generatePromoCodes()
+      const result = await generatePromoCodes(type)
 
       if (result.success) {
-        toast.success(`${result.count} nouveaux codes promos générés avec succès`)
+        const typeLabel = type === "play" ? "pour jouer" : "pour créer"
+        toast.success(`${result.count} nouveaux codes promos ${typeLabel} générés`)
         await loadPromoCodes()
       } else {
         toast.error(result.error || "Erreur lors de la génération")
@@ -91,10 +114,12 @@ export default function PromoCodesPage() {
   async function handleDeleteUsedCodes() {
     try {
       setDeleting(true)
-      const result = await deleteUsedPromoCodes()
+      const typeToDelete = typeFilter !== "all" ? typeFilter : undefined
+      const result = await deleteUsedPromoCodes(typeToDelete)
 
       if (result.success) {
-        toast.success(`${result.count} code(s) promo utilisé(s) supprimé(s)`)
+        const typeLabel = typeToDelete === "play" ? " pour jouer" : typeToDelete === "publish" ? " pour créer" : ""
+        toast.success(`${result.count} code(s) promo${typeLabel} utilisé(s) supprimé(s)`)
         await loadPromoCodes()
       } else {
         toast.error(result.error || "Erreur lors de la suppression")
@@ -160,18 +185,32 @@ export default function PromoCodesPage() {
                 <Trash2 className="h-4 w-4 mr-2" />
                 Supprimer les codes utilisés
               </Button>
-              <Button onClick={handleGenerateCodes} disabled={generating}>
-                <Plus className="h-4 w-4 mr-2" />
-                {generating ? "Génération..." : "Générer 10 codes"}
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button disabled={generating}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    {generating ? "Génération..." : "Générer 10 codes"}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleGenerateCodes("play")}>
+                    <Gamepad2 className="h-4 w-4 mr-2" />
+                    Codes pour jouer
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleGenerateCodes("publish")}>
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Codes pour créer
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        {/* Statistiques */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+        {/* Statistiques globales */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
           <StatCard
             title="Total de codes"
             value={stats.total.toString()}
@@ -198,26 +237,94 @@ export default function PromoCodesPage() {
           />
         </div>
 
+        {/* Statistiques par type */}
+        <div className="grid gap-4 md:grid-cols-2 mb-8">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Gamepad2 className="h-4 w-4" />
+                Codes pour jouer
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total:</span>
+                  <span className="font-semibold">{stats.byType.play.total}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Utilisés:</span>
+                  <span className="font-semibold">{stats.byType.play.used}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Disponibles:</span>
+                  <span className="font-semibold text-green-600">{stats.byType.play.unused}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Pencil className="h-4 w-4" />
+                Codes pour créer
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total:</span>
+                  <span className="font-semibold">{stats.byType.publish.total}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Utilisés:</span>
+                  <span className="font-semibold">{stats.byType.publish.used}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Disponibles:</span>
+                  <span className="font-semibold text-green-600">{stats.byType.publish.unused}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Table des codes promos */}
         <Card>
           <CardHeader>
-            <CardTitle>Liste des codes promos</CardTitle>
-            <CardDescription>
-              {promoCodes.length} code(s) promo au total
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Liste des codes promos</CardTitle>
+                <CardDescription>
+                  {filteredCodes.length} code(s) promo{typeFilter !== "all" && ` (${typeFilter === "play" ? "pour jouer" : "pour créer"})`}
+                </CardDescription>
+              </div>
+              <Tabs value={typeFilter} onValueChange={(value) => setTypeFilter(value as PromoCodeType | "all")}>
+                <TabsList>
+                  <TabsTrigger value="all">Tous</TabsTrigger>
+                  <TabsTrigger value="play">
+                    <Gamepad2 className="h-4 w-4 mr-2" />
+                    Jouer
+                  </TabsTrigger>
+                  <TabsTrigger value="publish">
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Créer
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
           </CardHeader>
           <CardContent>
-            {promoCodes.length === 0 ? (
+            {filteredCodes.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12">
                 <Tag className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Aucun code promo</h3>
+                <h3 className="text-lg font-semibold mb-2">
+                  {typeFilter === "all" ? "Aucun code promo" : `Aucun code promo pour ${typeFilter === "play" ? "jouer" : "créer"}`}
+                </h3>
                 <p className="text-sm text-muted-foreground mb-4">
                   Commencez par générer des codes promos
                 </p>
-                <Button onClick={handleGenerateCodes} disabled={generating}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Générer 10 codes
-                </Button>
               </div>
             ) : (
               <div className="rounded-md border">
@@ -225,16 +332,32 @@ export default function PromoCodesPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Code</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead>Statut</TableHead>
                       <TableHead>Date de création</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {promoCodes.map((promoCode) => (
+                    {filteredCodes.map((promoCode) => (
                       <TableRow key={promoCode.id}>
                         <TableCell className="font-mono font-semibold">
                           {promoCode.code}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="gap-1">
+                            {promoCode.type === "play" ? (
+                              <>
+                                <Gamepad2 className="h-3 w-3" />
+                                Jouer
+                              </>
+                            ) : (
+                              <>
+                                <Pencil className="h-3 w-3" />
+                                Créer
+                              </>
+                            )}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant={promoCode.used ? "secondary" : "default"}>

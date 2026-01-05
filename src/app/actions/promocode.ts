@@ -2,10 +2,13 @@
 
 import { supabase } from "@/lib/supabase"
 
+export type PromoCodeType = "play" | "publish"
+
 export interface PromoCode {
   id: string
   code: string
   used: boolean
+  type: PromoCodeType
   created_at: string
 }
 
@@ -41,9 +44,9 @@ function generatePromoCode(): string {
 /**
  * Génère 10 nouveaux codes promos
  */
-export async function generatePromoCodes(): Promise<{ success: boolean; count: number; error?: string }> {
+export async function generatePromoCodes(type: PromoCodeType = "play"): Promise<{ success: boolean; count: number; error?: string }> {
   try {
-    const newCodes: { code: string; used: boolean }[] = []
+    const newCodes: { code: string; used: boolean; type: PromoCodeType }[] = []
     const existingCodes = await getPromoCodes()
     const existingCodesSet = new Set(existingCodes.map(c => c.code))
 
@@ -51,7 +54,7 @@ export async function generatePromoCodes(): Promise<{ success: boolean; count: n
     while (newCodes.length < 10) {
       const code = generatePromoCode()
       if (!existingCodesSet.has(code) && !newCodes.some(c => c.code === code)) {
-        newCodes.push({ code, used: false })
+        newCodes.push({ code, used: false, type })
         existingCodesSet.add(code)
       }
     }
@@ -73,21 +76,32 @@ export async function generatePromoCodes(): Promise<{ success: boolean; count: n
 }
 
 /**
- * Supprime tous les codes promos utilisés
+ * Supprime tous les codes promos utilisés (optionnellement filtrés par type)
  */
-export async function deleteUsedPromoCodes(): Promise<{ success: boolean; count: number; error?: string }> {
+export async function deleteUsedPromoCodes(type?: PromoCodeType): Promise<{ success: boolean; count: number; error?: string }> {
   try {
-    // Compter les codes utilisés avant suppression
-    const { count } = await supabase
+    // Construire la requête
+    let countQuery = supabase
       .from("promocode")
       .select("*", { count: "exact", head: true })
       .eq("used", true)
 
-    // Supprimer tous les codes utilisés
-    const { error } = await supabase
+    let deleteQuery = supabase
       .from("promocode")
       .delete()
       .eq("used", true)
+
+    // Ajouter le filtre de type si spécifié
+    if (type) {
+      countQuery = countQuery.eq("type", type)
+      deleteQuery = deleteQuery.eq("type", type)
+    }
+
+    // Compter les codes utilisés avant suppression
+    const { count } = await countQuery
+
+    // Supprimer tous les codes utilisés
+    const { error } = await deleteQuery
 
     if (error) {
       console.error("Error deleting used promocodes:", error)
@@ -109,6 +123,10 @@ export async function getPromoCodeStats(): Promise<{
   used: number
   unused: number
   usageRate: number
+  byType: {
+    play: { total: number; used: number; unused: number }
+    publish: { total: number; used: number; unused: number }
+  }
 }> {
   const codes = await getPromoCodes()
   const total = codes.length
@@ -116,5 +134,26 @@ export async function getPromoCodeStats(): Promise<{
   const unused = total - used
   const usageRate = total > 0 ? (used / total) * 100 : 0
 
-  return { total, used, unused, usageRate }
+  // Stats par type
+  const playCodes = codes.filter(c => c.type === "play")
+  const publishCodes = codes.filter(c => c.type === "publish")
+
+  return {
+    total,
+    used,
+    unused,
+    usageRate,
+    byType: {
+      play: {
+        total: playCodes.length,
+        used: playCodes.filter(c => c.used).length,
+        unused: playCodes.filter(c => !c.used).length
+      },
+      publish: {
+        total: publishCodes.length,
+        used: publishCodes.filter(c => c.used).length,
+        unused: publishCodes.filter(c => !c.used).length
+      }
+    }
+  }
 }
