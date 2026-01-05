@@ -21,7 +21,8 @@ import {
   TrendingUp,
   AlertCircle,
   Settings,
-  Box
+  Box,
+  Tag
 } from "lucide-react"
 
 export default function DashboardPage() {
@@ -113,6 +114,13 @@ export default function DashboardPage() {
             >
               <Box className="h-4 w-4 mr-2" />
               Objets 3D
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push("/dashboard/promocodes")}
+            >
+              <Tag className="h-4 w-4 mr-2" />
+              Codes Promos
             </Button>
             <span className="text-sm text-zinc-600 dark:text-zinc-400">
               {user.email}
