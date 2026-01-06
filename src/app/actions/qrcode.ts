@@ -106,7 +106,8 @@ async function generateUniqueShortCode(): Promise<string> {
  */
 export async function createQRCode(
   name: string,
-  destinationUrl: string
+  destinationUrl: string,
+  baseUrl?: string
 ): Promise<{ success: boolean; data?: QRCodeData; error?: string; qrCodeDataUrl?: string }> {
   try {
     const supabase = await createClient()
@@ -137,8 +138,9 @@ export async function createQRCode(
       return { success: false, error: "Erreur lors de la création du QR code" }
     }
 
-    // Générer l'URL de redirection
-    const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/qr/${shortCode}`
+    // Générer l'URL de redirection (utiliser baseUrl si fourni, sinon variable d'env, sinon localhost)
+    const appUrl = baseUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const redirectUrl = `${appUrl}/qr/${shortCode}`
 
     // Générer le QR code en Data URL
     const qrCodeDataUrl = await QRCode.toDataURL(redirectUrl, {
@@ -309,9 +311,10 @@ export async function getQRCodeStats(): Promise<QRCodeStats> {
 /**
  * Génère l'image du QR code pour téléchargement
  */
-export async function generateQRCodeImage(shortCode: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
+export async function generateQRCodeImage(shortCode: string, baseUrl?: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
   try {
-    const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/qr/${shortCode}`
+    const appUrl = baseUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const redirectUrl = `${appUrl}/qr/${shortCode}`
 
     const qrCodeDataUrl = await QRCode.toDataURL(redirectUrl, {
       errorCorrectionLevel: "H",

@@ -110,7 +110,9 @@ export default function QRCodesPage() {
 
     try {
       setCreating(true)
-      const result = await createQRCode(formData.name, formData.destinationUrl)
+      // Récupérer l'URL de base depuis le navigateur
+      const baseUrl = window.location.origin
+      const result = await createQRCode(formData.name, formData.destinationUrl, baseUrl)
 
       if (result.success && result.data && result.qrCodeDataUrl) {
         toast.success("QR code créé avec succès")
@@ -179,7 +181,9 @@ export default function QRCodesPage() {
 
   async function handleShowQRCode(qrCode: QRCodeData) {
     try {
-      const result = await generateQRCodeImage(qrCode.short_code)
+      // Récupérer l'URL de base depuis le navigateur
+      const baseUrl = window.location.origin
+      const result = await generateQRCodeImage(qrCode.short_code, baseUrl)
 
       if (result.success && result.dataUrl) {
         setSelectedQRCode(qrCode)
