@@ -22,7 +22,8 @@ import {
   AlertCircle,
   Settings,
   Box,
-  Tag
+  Tag,
+  QrCode
 } from "lucide-react"
 
 export default function DashboardPage() {
@@ -121,6 +122,13 @@ export default function DashboardPage() {
             >
               <Tag className="h-4 w-4 mr-2" />
               Codes Promos
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push("/dashboard/qrcodes")}
+            >
+              <QrCode className="h-4 w-4 mr-2" />
+              QR Codes
             </Button>
             <span className="text-sm text-zinc-600 dark:text-zinc-400">
               {user.email}
