@@ -7,6 +7,8 @@ export interface QRCodeData {
   id: string
   name: string
   destination_url: string
+  ios_url: string | null
+  android_url: string | null
   short_code: string
   created_by: string | null
   created_at: string
@@ -101,15 +103,22 @@ async function generateUniqueShortCode(): Promise<string> {
   throw new Error("Unable to generate unique short code")
 }
 
+export interface CreateQRCodeInput {
+  name: string
+  destinationUrl: string
+  iosUrl?: string
+  androidUrl?: string
+  baseUrl?: string
+}
+
 /**
- * Crée un nouveau QR code
+ * Crée un nouveau QR code avec support multi-plateforme
  */
 export async function createQRCode(
-  name: string,
-  destinationUrl: string,
-  baseUrl?: string
+  input: CreateQRCodeInput
 ): Promise<{ success: boolean; data?: QRCodeData; error?: string; qrCodeDataUrl?: string }> {
   try {
+    const { name, destinationUrl, iosUrl, androidUrl, baseUrl } = input
     const supabase = await createClient()
 
     // Vérifier l'authentification
@@ -127,6 +136,8 @@ export async function createQRCode(
       .insert({
         name,
         destination_url: destinationUrl,
+        ios_url: iosUrl || null,
+        android_url: androidUrl || null,
         short_code: shortCode,
         created_by: user.id,
       })
@@ -212,15 +223,84 @@ export async function toggleQRCodeStatus(
   }
 }
 
+export interface UpdateQRCodeUrlsInput {
+  id: string
+  destinationUrl: string
+  iosUrl?: string | null
+  androidUrl?: string | null
+}
+
 /**
- * Enregistre un scan de QR code
+ * Met à jour les URLs d'un QR code existant sans changer le code court
+ * Permet de modifier les destinations sans régénérer le QR code
+ */
+export async function updateQRCodeUrls(
+  input: UpdateQRCodeUrlsInput
+): Promise<{ success: boolean; data?: QRCodeData; error?: string }> {
+  try {
+    const { id, destinationUrl, iosUrl, androidUrl } = input
+    const supabase = await createClient()
+
+    // Vérifier l'authentification
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return { success: false, error: "Non authentifié" }
+    }
+
+    const { data, error } = await supabase
+      .from("QRCode")
+      .update({
+        destination_url: destinationUrl,
+        ios_url: iosUrl || null,
+        android_url: androidUrl || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Error updating QR code URLs:", error)
+      return { success: false, error: "Erreur lors de la mise à jour des URLs" }
+    }
+
+    return { success: true, data }
+  } catch (error) {
+    console.error("Error in updateQRCodeUrls:", error)
+    return { success: false, error: "Erreur lors de la mise à jour des URLs" }
+  }
+}
+
+/**
+ * Détecte la plateforme à partir du user-agent
+ */
+function detectPlatform(userAgent: string | undefined): "ios" | "android" | "other" {
+  if (!userAgent) return "other"
+
+  const ua = userAgent.toLowerCase()
+
+  // Détection iOS (iPhone, iPad, iPod)
+  if (ua.includes("iphone") || ua.includes("ipad") || ua.includes("ipod")) {
+    return "ios"
+  }
+
+  // Détection Android
+  if (ua.includes("android")) {
+    return "android"
+  }
+
+  return "other"
+}
+
+/**
+ * Enregistre un scan de QR code et retourne l'URL appropriée selon la plateforme
  */
 export async function recordQRCodeScan(
   shortCode: string,
   userAgent?: string,
   ipAddress?: string,
   referer?: string
-): Promise<{ success: boolean; destinationUrl?: string; error?: string }> {
+): Promise<{ success: boolean; destinationUrl?: string; platform?: string; error?: string }> {
   try {
     const supabase = await createClient()
 
@@ -234,6 +314,9 @@ export async function recordQRCodeScan(
     if (!qrCode.is_active) {
       return { success: false, error: "Ce QR code n'est plus actif" }
     }
+
+    // Détecter la plateforme
+    const platform = detectPlatform(userAgent)
 
     // Enregistrer le scan
     await supabase.from("QRCodeScan").insert({
@@ -249,7 +332,16 @@ export async function recordQRCodeScan(
       .update({ total_scans: qrCode.total_scans + 1 })
       .eq("id", qrCode.id)
 
-    return { success: true, destinationUrl: qrCode.destination_url }
+    // Déterminer l'URL de destination selon la plateforme
+    let destinationUrl = qrCode.destination_url
+
+    if (platform === "ios" && qrCode.ios_url) {
+      destinationUrl = qrCode.ios_url
+    } else if (platform === "android" && qrCode.android_url) {
+      destinationUrl = qrCode.android_url
+    }
+
+    return { success: true, destinationUrl, platform }
   } catch (error) {
     console.error("Error recording QR code scan:", error)
     return { success: false, error: "Erreur lors de l'enregistrement du scan" }

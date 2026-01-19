@@ -44,6 +44,9 @@ import {
   Copy,
   ExternalLink,
   BarChart3,
+  Pencil,
+  Smartphone,
+  Apple,
 } from "lucide-react"
 import {
   getQRCodes,
@@ -52,6 +55,7 @@ import {
   toggleQRCodeStatus,
   getQRCodeStats,
   generateQRCodeImage,
+  updateQRCodeUrls,
   type QRCodeData,
 } from "@/app/actions/qrcode"
 import { toast } from "sonner"
@@ -64,10 +68,12 @@ export default function QRCodesPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showQRCodeDialog, setShowQRCodeDialog] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
   const [selectedQRCode, setSelectedQRCode] = useState<QRCodeData | null>(null)
   const [qrCodeDataUrl, setQRCodeDataUrl] = useState<string>("")
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [updating, setUpdating] = useState(false)
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -79,6 +85,15 @@ export default function QRCodesPage() {
   const [formData, setFormData] = useState({
     name: "",
     destinationUrl: "",
+    iosUrl: "",
+    androidUrl: "",
+  })
+
+  // Formulaire d'édition
+  const [editFormData, setEditFormData] = useState({
+    destinationUrl: "",
+    iosUrl: "",
+    androidUrl: "",
   })
 
   useEffect(() => {
@@ -104,7 +119,7 @@ export default function QRCodesPage() {
 
   async function handleCreateQRCode() {
     if (!formData.name.trim() || !formData.destinationUrl.trim()) {
-      toast.error("Veuillez remplir tous les champs")
+      toast.error("Veuillez remplir le nom et l'URL par défaut")
       return
     }
 
@@ -112,11 +127,17 @@ export default function QRCodesPage() {
       setCreating(true)
       // Récupérer l'URL de base depuis le navigateur
       const baseUrl = window.location.origin
-      const result = await createQRCode(formData.name, formData.destinationUrl, baseUrl)
+      const result = await createQRCode({
+        name: formData.name,
+        destinationUrl: formData.destinationUrl,
+        iosUrl: formData.iosUrl || undefined,
+        androidUrl: formData.androidUrl || undefined,
+        baseUrl,
+      })
 
       if (result.success && result.data && result.qrCodeDataUrl) {
         toast.success("QR code créé avec succès")
-        setFormData({ name: "", destinationUrl: "" })
+        setFormData({ name: "", destinationUrl: "", iosUrl: "", androidUrl: "" })
         setShowCreateDialog(false)
 
         // Afficher le QR code généré
@@ -176,6 +197,49 @@ export default function QRCodesPage() {
     } catch (error) {
       console.error("Error toggling status:", error)
       toast.error("Erreur lors de la modification")
+    }
+  }
+
+  function handleOpenEditDialog(qrCode: QRCodeData) {
+    setSelectedQRCode(qrCode)
+    setEditFormData({
+      destinationUrl: qrCode.destination_url,
+      iosUrl: qrCode.ios_url || "",
+      androidUrl: qrCode.android_url || "",
+    })
+    setShowEditDialog(true)
+  }
+
+  async function handleUpdateQRCode() {
+    if (!selectedQRCode) return
+
+    if (!editFormData.destinationUrl.trim()) {
+      toast.error("L'URL par défaut est obligatoire")
+      return
+    }
+
+    try {
+      setUpdating(true)
+      const result = await updateQRCodeUrls({
+        id: selectedQRCode.id,
+        destinationUrl: editFormData.destinationUrl,
+        iosUrl: editFormData.iosUrl || null,
+        androidUrl: editFormData.androidUrl || null,
+      })
+
+      if (result.success) {
+        toast.success("URLs mises à jour avec succès")
+        setShowEditDialog(false)
+        setSelectedQRCode(null)
+        await loadQRCodes()
+      } else {
+        toast.error(result.error || "Erreur lors de la mise à jour")
+      }
+    } catch (error) {
+      console.error("Error updating QR code:", error)
+      toast.error("Erreur lors de la mise à jour")
+    } finally {
+      setUpdating(false)
     }
   }
 
@@ -352,16 +416,32 @@ export default function QRCodesPage() {
                             </Button>
                           </div>
                         </TableCell>
-                        <TableCell className="max-w-xs truncate">
-                          <a
-                            href={qrCode.destination_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline flex items-center gap-1"
-                          >
-                            {qrCode.destination_url}
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
+                        <TableCell className="max-w-xs">
+                          <div className="flex flex-col gap-1">
+                            <a
+                              href={qrCode.destination_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline flex items-center gap-1 truncate text-sm"
+                            >
+                              {qrCode.destination_url}
+                              <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                            </a>
+                            <div className="flex gap-2">
+                              {qrCode.ios_url && (
+                                <Badge variant="outline" className="text-xs gap-1">
+                                  <Apple className="h-3 w-3" />
+                                  iOS
+                                </Badge>
+                              )}
+                              {qrCode.android_url && (
+                                <Badge variant="outline" className="text-xs gap-1">
+                                  <Smartphone className="h-3 w-3" />
+                                  Android
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">
@@ -393,13 +473,23 @@ export default function QRCodesPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => handleShowQRCode(qrCode)}
+                              title="Voir le QR code"
                             >
                               <QrCodeIcon className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
+                              onClick={() => handleOpenEditDialog(qrCode)}
+                              title="Modifier les URLs"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => handleToggleStatus(qrCode)}
+                              title={qrCode.is_active ? "Désactiver" : "Activer"}
                             >
                               {qrCode.is_active ? (
                                 <EyeOff className="h-4 w-4" />
@@ -414,6 +504,7 @@ export default function QRCodesPage() {
                                 setSelectedQRCode(qrCode)
                                 setShowDeleteDialog(true)
                               }}
+                              title="Supprimer"
                             >
                               <Trash2 className="h-4 w-4 text-red-600" />
                             </Button>
@@ -431,11 +522,11 @@ export default function QRCodesPage() {
 
       {/* Dialog de création */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Créer un nouveau QR code</DialogTitle>
             <DialogDescription>
-              Le QR code générera une URL courte qui redirigera vers votre destination
+              Le QR code redirigera automatiquement vers l'URL appropriée selon l'appareil (iOS, Android ou autre)
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -443,7 +534,7 @@ export default function QRCodesPage() {
               <Label htmlFor="name">Nom du QR code</Label>
               <Input
                 id="name"
-                placeholder="Ex: Menu du restaurant"
+                placeholder="Ex: Télécharger notre app"
                 value={formData.name}
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
@@ -451,7 +542,7 @@ export default function QRCodesPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="url">URL de destination</Label>
+              <Label htmlFor="url">URL par défaut *</Label>
               <Input
                 id="url"
                 type="url"
@@ -462,8 +553,43 @@ export default function QRCodesPage() {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                L'URL vers laquelle le QR code redirigera les utilisateurs
+                URL de redirection par défaut (pour les appareils non iOS/Android ou si les URLs spécifiques ne sont pas définies)
               </p>
+            </div>
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium mb-3">URLs spécifiques par plateforme (optionnel)</p>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="iosUrl" className="flex items-center gap-2">
+                    <Apple className="h-4 w-4" />
+                    URL iOS (App Store)
+                  </Label>
+                  <Input
+                    id="iosUrl"
+                    type="url"
+                    placeholder="https://apps.apple.com/app/..."
+                    value={formData.iosUrl}
+                    onChange={(e) =>
+                      setFormData({ ...formData, iosUrl: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="androidUrl" className="flex items-center gap-2">
+                    <Smartphone className="h-4 w-4" />
+                    URL Android (Google Play)
+                  </Label>
+                  <Input
+                    id="androidUrl"
+                    type="url"
+                    placeholder="https://play.google.com/store/apps/..."
+                    value={formData.androidUrl}
+                    onChange={(e) =>
+                      setFormData({ ...formData, androidUrl: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -483,11 +609,11 @@ export default function QRCodesPage() {
 
       {/* Dialog d'affichage du QR code */}
       <Dialog open={showQRCodeDialog} onOpenChange={setShowQRCodeDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{selectedQRCode?.name}</DialogTitle>
             <DialogDescription>
-              Scannez ce QR code pour accéder à {selectedQRCode?.destination_url}
+              Ce QR code redirige automatiquement selon l'appareil
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center space-y-4 py-4">
@@ -498,15 +624,68 @@ export default function QRCodesPage() {
                 className="w-64 h-64 border-4 border-zinc-200 dark:border-zinc-800 rounded-lg"
               />
             )}
-            <div className="w-full space-y-2">
+            <div className="w-full space-y-3">
               <div className="flex items-center justify-between p-3 bg-zinc-100 dark:bg-zinc-800 rounded">
-                <code className="text-sm">
-                  {window.location.origin}/qr/{selectedQRCode?.short_code}
+                <code className="text-sm truncate flex-1 mr-2">
+                  {typeof window !== 'undefined' ? window.location.origin : ''}/qr/{selectedQRCode?.short_code}
                 </code>
                 <Button variant="ghost" size="sm" onClick={copyQRCodeUrl}>
                   <Copy className="h-4 w-4" />
                 </Button>
               </div>
+
+              <div className="border rounded-lg p-3 space-y-2">
+                <p className="text-sm font-medium">URLs de redirection</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <span className="text-muted-foreground min-w-[80px]">Par défaut:</span>
+                    <a
+                      href={selectedQRCode?.destination_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline truncate flex-1"
+                    >
+                      {selectedQRCode?.destination_url}
+                    </a>
+                  </div>
+                  {selectedQRCode?.ios_url && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-muted-foreground min-w-[80px] flex items-center gap-1">
+                        <Apple className="h-3 w-3" /> iOS:
+                      </span>
+                      <a
+                        href={selectedQRCode.ios_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline truncate flex-1"
+                      >
+                        {selectedQRCode.ios_url}
+                      </a>
+                    </div>
+                  )}
+                  {selectedQRCode?.android_url && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-muted-foreground min-w-[80px] flex items-center gap-1">
+                        <Smartphone className="h-3 w-3" /> Android:
+                      </span>
+                      <a
+                        href={selectedQRCode.android_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline truncate flex-1"
+                      >
+                        {selectedQRCode.android_url}
+                      </a>
+                    </div>
+                  )}
+                  {!selectedQRCode?.ios_url && !selectedQRCode?.android_url && (
+                    <p className="text-xs text-muted-foreground italic">
+                      Aucune URL spécifique iOS/Android configurée
+                    </p>
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Scans totaux:</span>
                 <Badge variant="secondary">
@@ -517,12 +696,113 @@ export default function QRCodesPage() {
             </div>
           </div>
           <DialogFooter className="sm:justify-between">
-            <Button variant="outline" onClick={downloadQRCode}>
-              <Download className="h-4 w-4 mr-2" />
-              Télécharger
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={downloadQRCode}>
+                <Download className="h-4 w-4 mr-2" />
+                Télécharger
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (selectedQRCode) {
+                    setShowQRCodeDialog(false)
+                    handleOpenEditDialog(selectedQRCode)
+                  }
+                }}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Modifier URLs
+              </Button>
+            </div>
             <Button onClick={() => setShowQRCodeDialog(false)}>
               Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog d'édition des URLs */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Modifier les URLs - {selectedQRCode?.name}</DialogTitle>
+            <DialogDescription>
+              Modifiez les URLs de destination sans changer le QR code. Le même QR code redirigera vers les nouvelles URLs.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
+              <p className="text-sm text-green-800 dark:text-green-200">
+                Le QR code reste identique - pas besoin de le réimprimer !
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-url">URL par défaut *</Label>
+              <Input
+                id="edit-url"
+                type="url"
+                placeholder="https://example.com"
+                value={editFormData.destinationUrl}
+                onChange={(e) =>
+                  setEditFormData({ ...editFormData, destinationUrl: e.target.value })
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                URL de redirection pour les appareils non iOS/Android
+              </p>
+            </div>
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium mb-3">URLs spécifiques par plateforme (optionnel)</p>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-iosUrl" className="flex items-center gap-2">
+                    <Apple className="h-4 w-4" />
+                    URL iOS (App Store)
+                  </Label>
+                  <Input
+                    id="edit-iosUrl"
+                    type="url"
+                    placeholder="https://apps.apple.com/app/..."
+                    value={editFormData.iosUrl}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, iosUrl: e.target.value })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Laissez vide pour utiliser l'URL par défaut sur iOS
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-androidUrl" className="flex items-center gap-2">
+                    <Smartphone className="h-4 w-4" />
+                    URL Android (Google Play)
+                  </Label>
+                  <Input
+                    id="edit-androidUrl"
+                    type="url"
+                    placeholder="https://play.google.com/store/apps/..."
+                    value={editFormData.androidUrl}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, androidUrl: e.target.value })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Laissez vide pour utiliser l'URL par défaut sur Android
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowEditDialog(false)}
+              disabled={updating}
+            >
+              Annuler
+            </Button>
+            <Button onClick={handleUpdateQRCode} disabled={updating}>
+              {updating ? "Enregistrement..." : "Enregistrer les modifications"}
             </Button>
           </DialogFooter>
         </DialogContent>
